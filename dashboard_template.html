@@ -1,0 +1,533 @@
+<title>融資維持率儀表板</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* 版型與色彩比照 taifex-vix / taifex-gex 儀表板：方角、細框、等寬字的標籤與數字、s1 藍 / s2 橘。
+   一欄：標題 -> 區間按鈕 -> 最新數值 -> 兩張共用游標的圖 -> 最低維持率個股表 -> 備註。只放上市。 */
+:root {
+  color-scheme: light;
+  --surface:      #fcfcfb;
+  --plane:        #f9f9f7;
+  --ink:          #0b0b0b;
+  --ink-2:        #52514e;
+  --muted:        #898781;
+  --grid:         #e1e0d9;
+  --axis:         #c3c2b7;
+  --hairline:     rgba(11,11,11,0.10);
+  --s1:           #2a78d6;   /* 加權指數 */
+  --s2:           #eb6834;   /* 融資維持率與其廣度 (130% 最深、150% 最淺) */
+  --chip:         rgba(11,11,11,0.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface:  #1a1a19;
+    --plane:    #0d0d0d;
+    --ink:      #ffffff;
+    --ink-2:    #c3c2b7;
+    --muted:    #898781;
+    --grid:     #2c2c2a;
+    --axis:     #383835;
+    --hairline: rgba(255,255,255,0.10);
+    --s1:       #3987e5;
+    --s2:       #d95926;
+    --chip:     rgba(255,255,255,0.06);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface:  #1a1a19;
+  --plane:    #0d0d0d;
+  --ink:      #ffffff;
+  --ink-2:    #c3c2b7;
+  --muted:    #898781;
+  --grid:     #2c2c2a;
+  --axis:     #383835;
+  --hairline: rgba(255,255,255,0.10);
+  --s1:       #3987e5;
+  --s2:       #d95926;
+  --chip:     rgba(255,255,255,0.06);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--plane);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans TC", sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+.mono {
+  font-family: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.wrap {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 40px 8px 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+/* ---------- header ---------- */
+header { display: flex; flex-direction: column; gap: 8px; }
+.eyebrow {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+h1 {
+  margin: 0;
+  font-size: clamp(24px, 3.4vw, 34px);
+  font-weight: 620;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.lede { margin: 0; color: var(--ink-2); max-width: 62ch; font-size: 15px; }
+
+/* ---------- filter rows ---------- */
+.filterblock { display: flex; flex-direction: column; gap: 8px; }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.filters .label {
+  min-width: 34px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted); margin-right: 4px;
+}
+button.range {
+  font: inherit; font-size: 13px;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  padding: 6px 13px;
+  min-height: 32px;
+  color: var(--ink-2);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  cursor: pointer;
+}
+button.range:hover { background: var(--chip); color: var(--ink); }
+button.range[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+button.range:focus-visible, summary:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
+
+.stamp { font-size: 11.5px; color: var(--muted); letter-spacing: 0.02em; }
+
+/* ---------- stat tiles ---------- */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 1px;
+  background: var(--hairline);
+  border: 1px solid var(--hairline);
+}
+.tile { background: var(--surface); padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.tile .k {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
+  display: flex; align-items: center; gap: 7px;
+}
+.swatch { width: 9px; height: 9px; flex: none; }
+.tile .v { font-size: 30px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
+.tile .sub { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; color: var(--ink-2); }
+
+/* ---------- chart cards ---------- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  padding: 18px 18px 12px;
+  display: flex; flex-direction: column; gap: 12px;
+  min-width: 0;
+}
+.card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 16px; }
+.card-head h2 { margin: 0; font-size: 14px; font-weight: 620; letter-spacing: -0.01em; }
+.card-head .note { font-size: 12.5px; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin-left: auto; }
+.legend .item {
+  display: flex; align-items: center; gap: 6px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11.5px; color: var(--ink-2);
+  background: none; border: 0; padding: 0; cursor: pointer;
+}
+.legend .item[aria-pressed="false"] { opacity: .4; }
+.legend .line { width: 15px; height: 2px; flex: none; }
+
+.plot { position: relative; width: 100%; touch-action: pan-y; }
+.plot svg { display: block; width: 100%; height: auto; }
+.tk { fill: var(--muted); font-size: 11px; font-family: ui-monospace, Consolas, monospace; }
+.an { fill: var(--ink-2); font-size: 11.5px; font-family: ui-monospace, Consolas, monospace; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+.gl { stroke: var(--grid); stroke-width: 1; }
+.ax { stroke: var(--axis); stroke-width: 1; }
+.ref { stroke: var(--axis); stroke-width: 1; stroke-dasharray: 4 3; }
+.ln { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.ln.index { stroke: var(--s1); }
+.ln.maint, .ln.b130 { stroke: var(--s2); }
+.ln.b140 { stroke: var(--s2); opacity: .7; }
+.ln.b150 { stroke: var(--s2); opacity: .42; }
+.warm { fill: var(--chip); }
+.cross { stroke: var(--axis); stroke-width: 1; }
+.pt { stroke: var(--surface); stroke-width: 2; }
+.pt.index { fill: var(--s1); }
+.pt.maint, .pt.b130, .pt.b140, .pt.b150 { fill: var(--s2); }
+
+.tip {
+  position: absolute; pointer-events: none; opacity: 0;
+  transform: translate(-50%, 0);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.10);
+  padding: 9px 11px; min-width: 156px; width: max-content; white-space: nowrap; z-index: 5;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  transition: opacity .09s linear;
+}
+.tip.on { opacity: 1; }
+.tip .date { color: var(--ink); font-weight: 600; margin-bottom: 5px; }
+.tip .row { display: flex; align-items: center; gap: 7px; color: var(--ink-2); }
+.tip .row b { margin-left: auto; padding-left: 10px; color: var(--ink); font-weight: 600; }
+.tip .mode { margin-top: 5px; color: var(--muted); font-size: 11px; }
+
+/* ---------- table ---------- */
+.tablewrap { overflow-x: auto; border: 1px solid var(--hairline); background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 640px; }
+caption { text-align: left; padding: 14px 16px 10px; font-size: 14px; font-weight: 620; }
+th, td {
+  padding: 7px 16px; text-align: right;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  border-top: 1px solid var(--grid);
+  white-space: nowrap;
+}
+th { color: var(--muted); font-weight: 500; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+th:nth-child(-n+2), td:nth-child(-n+2) { text-align: left; }
+td:nth-child(2) { font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans TC", sans-serif; }
+tbody tr:hover { background: var(--chip); }
+.mc { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.mbar { display: inline-block; height: 4px; background: var(--s2); }
+.na { color: var(--muted); }
+.tnote { padding: 8px 16px 12px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--grid); }
+details.raw summary { cursor: pointer; font-size: 12.5px; color: var(--ink-2); padding: 4px 0; }
+
+footer {
+  color: var(--muted); font-size: 12.5px;
+  border-top: 1px solid var(--hairline); padding-top: 16px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+footer code { font-family: ui-monospace, Consolas, monospace; background: var(--chip); padding: 1px 5px; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+<!--BODY-->
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">證交所公開資料 · 上市</div>
+    <h1>融資維持率儀表板</h1>
+    <p class="lede">
+      加權指數對照上市融資維持率，以及維持率低於 130%、140%、150% 的股票占比。
+      2026-08-03 起維持率直接用證交所官方的全市場整戶值，之前用逐檔融資餘額 × 收盤價重算。
+    </p>
+  </header>
+
+  <div class="filterblock">
+    <div class="filters" role="group" aria-label="時間範圍" id="rangeRow"><span class="label">區間</span></div>
+  </div>
+
+  <div class="stamp mono" id="stamp"></div>
+
+  <section class="tiles" id="tiles" aria-label="最新數值"></section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>加權指數與大盤融資維持率</h2>
+      <span class="note" id="note1"></span>
+      <div class="legend" id="leg1"></div>
+    </div>
+    <div class="plot" id="c1"><div class="tip"></div></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>市場廣度：低於 130%、140%、150% 的股票占比</h2>
+      <span class="note" id="note2"></span>
+      <div class="legend" id="leg2"></div>
+    </div>
+    <div class="plot" id="c2"><div class="tip"></div></div>
+  </section>
+
+  <div class="filterblock">
+    <div class="filters" role="group" aria-label="名單" id="sortRow"><span class="label">名單</span></div>
+    <div class="filters" role="group" aria-label="最小融資餘額" id="lotsRow"><span class="label">餘額</span></div>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <caption id="cap1"></caption>
+      <thead>
+        <tr><th scope="col">代號</th><th scope="col">名稱</th><th scope="col">估計維持率 %</th><th scope="col">估計借款（億元）</th><th scope="col">融資餘額（張）</th><th scope="col">收盤價</th><th scope="col">估計平均成本</th></tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="tnote" id="tnote"></div>
+  </div>
+
+  <details class="raw">
+    <summary>逐日數值（最近 15 個交易日）</summary>
+    <div class="tablewrap">
+      <table id="rawTbl">
+        <thead><tr><th scope="col">交易日</th><th scope="col">加權指數</th><th scope="col">維持率 %</th><th scope="col">低於 130%</th><th scope="col">低於 140%</th><th scope="col">低於 150%</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </details>
+
+  <footer>
+    <div><b>維持率有兩個來源。</b>2026-08-03 起是證交所臺股儀表板的全市場整戶擔保維持率（含上櫃、融券擔保品與抵繳證券，只提供最近 60 個交易日）；之前是上市重算 = Σ 逐檔融資餘額 × 收盤價 ÷ 證交所公布的上市融資金額。兩者口徑不同，接合處有一個台階（重疊期官方平均高約 1.5 點，急殺時差到 6 點上下）。</div>
+    <div><b>廣度與個股維持率是估計。</b>逐檔融資成本由每天的融資買賣與餘額推算：舊庫存賣出按平均成本扣，當天買進又賣出的量視為當沖並沖掉當天買進的部分；預熱期結束於 2019-08-20。不同扣帳設定下水準差很大，請看相對位置與急殺日，不看絕對檔數。</div>
+    <div>已被處分的高成本部位仍留在平均成本裡，重挫個股的估計維持率可能偏低；個股另受減資、分割、停牌復牌等公司行動影響。加權指數為證交所發行量加權股價指數收盤。程式：<code>make_dashboard.py</code></div>
+  </footer>
+
+</div>
+
+<script>
+(() => {
+'use strict';
+const D = /*__DATA__*/null;
+const N = D.dates.length, LAST = N - 1;
+const $ = (s, r = document) => r.querySelector(s);
+const MONO = 'ui-monospace, Consolas, monospace';
+const fmt = (v, d = 1) => (v == null || Number.isNaN(v)) ? '—' : v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+const state = { range: '1m', hidden: {}, mode: 'low', lots: 100 };
+const RANGES = [['1m', '1 個月'], ['3m', '3 個月'], ['6m', '6 個月'], ['1y', '1 年'], ['3y', '3 年'], ['all', '全部']];
+const OP = { b130: 1, b140: 0.7, b150: 0.42 };            /* 130% 最深、150% 最淺 */
+const BK = [['b150', '低於 150%'], ['b140', '低於 140%'], ['b130', '低於 130%']];   /* 由淺到深畫，深色在最上層 */
+let C1 = null, C2 = null;
+
+/* ---------- 區間與刻度 ---------- */
+function startIdx() {
+  if (state.range === 'all') return 0;
+  const months = { '1m': 1, '3m': 3, '6m': 6, '1y': 12, '3y': 36 }[state.range];
+  const e = new Date(D.dates[LAST] + 'T00:00:00Z'); e.setUTCMonth(e.getUTCMonth() - months);
+  const iso = e.toISOString().slice(0, 10); let i = 0; while (i < LAST && D.dates[i] < iso) i++; return i;
+}
+const marginsFor = W => ({ l: W < 560 ? 48 : 58, r: W < 560 ? 44 : 52 });
+function niceTicks(lo, hi, count = 5) {
+  const span = hi - lo || 1, raw = span / count, mag = Math.pow(10, Math.floor(Math.log10(raw))), norm = raw / mag;
+  const step = (norm >= 5 ? 10 : norm >= 2 ? 5 : norm >= 1 ? 2 : 1) * mag, out = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(6));
+  return out;
+}
+function extent(arr, i0) {
+  let lo = Infinity, hi = -Infinity;
+  for (let i = i0; i <= LAST; i++) { const v = arr[i]; if (v == null) continue; if (v < lo) lo = v; if (v > hi) hi = v; }
+  return [lo, hi];
+}
+/* x 刻度：90 個交易日以內 (約 3 個月內) 用等距交易日 (MM-DD)；其餘長區間用每年第一個交易日 (YYYY)，中區間用每月第一個交易日 (YYYY-MM)；太擠就隔一個標 */
+function dateTicks(i0, iw) {
+  const n = LAST - i0 + 1;
+  if (n <= 90) {
+    const want = Math.max(2, Math.min(Math.floor(iw / 74), 7)), step = Math.max(1, Math.round(n / want)), idx = [];
+    for (let i = i0; i <= LAST; i += step) idx.push(i);
+    if (LAST - idx[idx.length - 1] < step * 0.6) idx[idx.length - 1] = LAST; else idx.push(LAST);
+    return idx.map(i => ({ i, label: D.dates[i].slice(5) }));
+  }
+  const long = (LAST - i0) > 300, out = [];
+  let prev = '';
+  for (let i = i0; i <= LAST; i++) {
+    const key = long ? D.dates[i].slice(0, 4) : D.dates[i].slice(0, 7);
+    if (key !== prev) { out.push({ i, label: key }); prev = key; }
+  }
+  const slot = long ? 44 : 62, per = iw / Math.max(1, out.length), skip = Math.max(1, Math.ceil(slot / per));
+  return out.filter((_, k) => k % skip === 0);
+}
+function pathOf(arr, i0, X, Y) {
+  let d = '', open = false;
+  for (let i = i0; i <= LAST; i++) {
+    const v = arr[i];
+    if (v == null) { open = false; continue; }
+    d += (open ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(v).toFixed(1) + ' '; open = true;
+  }
+  return d;
+}
+function frame(host, hPlot) {
+  host.querySelectorAll('svg').forEach(n => n.remove());
+  const W = Math.max(320, host.clientWidth), PLOT_H = W < 560 ? 210 : hPlot, M = { t: 14, b: 26, ...marginsFor(W) };
+  return { W, PLOT_H, M, H: PLOT_H + M.t + M.b, iw: W - M.l - M.r, ih: PLOT_H };
+}
+function axesSvg(f, i0, X) {
+  let s = `<line class="ax" x1="${f.M.l}" x2="${f.M.l + f.iw}" y1="${f.M.t + f.ih}" y2="${f.M.t + f.ih}"/>`;
+  for (const k of dateTicks(i0, f.iw)) s += `<text class="tk" x="${X(k.i).toFixed(1)}" y="${f.M.t + f.ih + 17}" text-anchor="middle">${k.label}</text>`;
+  return s;
+}
+function legend(host, items, redraw) {
+  host.replaceChildren();
+  items.forEach(([key, name, color, op]) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'item'; b.setAttribute('aria-pressed', state.hidden[key] ? 'false' : 'true');
+    const l = document.createElement('span'); l.className = 'line'; l.style.background = color; if (op != null) l.style.opacity = String(op);
+    b.append(l, name); b.addEventListener('click', () => { state.hidden[key] = !state.hidden[key]; redraw(); });
+    host.append(b);
+  });
+}
+
+/* ---------- 第一張：加權指數 (左軸) + 融資維持率 (右軸) ---------- */
+function draw1() {
+  const host = $('#c1'), f = frame(host, 290), { M, iw, ih } = f;
+  const i0 = startIdx(), n = LAST - i0 + 1;
+  const X = i => M.l + (n === 1 ? iw / 2 : (i - i0) / (LAST - i0) * iw);
+  const [a0, a1] = extent(D.taiex, i0), pad = (a1 - a0) * 0.08 || 1, yl0 = a0 - pad, yl1 = a1 + pad;
+  const YL = v => M.t + ih - (v - yl0) / (yl1 - yl0) * ih;
+  const [m0, m1] = extent(D.m, i0), yr0 = Math.min(126, m0 - 3), yr1 = m1 + 4;
+  const YR = v => M.t + ih - (v - yr0) / (yr1 - yr0) * ih;
+  let s = '';
+  for (const t of niceTicks(yl0, yl1, 5)) s += `<line class="gl" x1="${M.l}" x2="${M.l + iw}" y1="${YL(t).toFixed(1)}" y2="${YL(t).toFixed(1)}"/><text class="tk" x="${M.l - 8}" y="${(YL(t) + 4).toFixed(1)}" text-anchor="end">${f.W < 560 ? fmt(t / 1000, 0) + 'k' : fmt(t, 0)}</text>`;
+  for (const t of niceTicks(yr0, yr1, 5)) s += `<text class="tk" x="${M.l + iw + 8}" y="${(YR(t) + 4).toFixed(1)}">${fmt(t, 0)}%</text>`;
+  s += axesSvg(f, i0, X);
+  if (130 >= yr0 && 130 <= yr1) s += `<line class="ref" x1="${M.l}" x2="${M.l + iw}" y1="${YR(130).toFixed(1)}" y2="${YR(130).toFixed(1)}"/><text class="an" x="${M.l + 6}" y="${(YR(130) - 5).toFixed(1)}">130% 追繳線</text>`;
+  if (D.offFrom > i0 && D.offFrom <= LAST) {   /* 重算 -> 官方 的接合處 */
+    const x = X(D.offFrom).toFixed(1);
+    const leftSide = +x > M.l + iw - 110;
+    s += `<line class="ref" x1="${x}" x2="${x}" y1="${M.t}" y2="${M.t + ih}"/><text class="an" x="${(leftSide ? +x - 5 : +x + 5).toFixed(1)}" y="${M.t + 11}" text-anchor="${leftSide ? 'end' : 'start'}">官方 ${D.dates[D.offFrom].slice(5)} 起</text>`;
+  }
+  if (!state.hidden.index) s += `<path class="ln index" d="${pathOf(D.taiex, i0, X, YL)}"/>`;
+  if (!state.hidden.maint) s += `<path class="ln maint" d="${pathOf(D.m, i0, X, YR)}"/>`;
+  if (!state.hidden.maint) {   /* 視窗內的最低點 */
+    let im = i0; for (let i = i0; i <= LAST; i++) if (D.m[i] != null && D.m[i] < D.m[im]) im = i;
+    const x = X(im), y = YR(D.m[im]), left = x > M.l + iw - 190;
+    s += `<circle class="pt maint" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5"/><text class="an" x="${(left ? x - 8 : x + 8).toFixed(1)}" y="${(y - 8).toFixed(1)}" text-anchor="${left ? 'end' : 'start'}">低 ${fmt(D.m[im], 1)}%${f.W < 560 ? '' : '（' + D.dates[im] + '）'}</text>`;
+  }
+  s += `<circle class="pt index" cx="${X(LAST).toFixed(1)}" cy="${YL(D.taiex[LAST]).toFixed(1)}" r="3.5" ${state.hidden.index ? 'opacity="0"' : ''}/><circle class="pt maint" cx="${X(LAST).toFixed(1)}" cy="${YR(D.m[LAST]).toFixed(1)}" r="3.5" ${state.hidden.maint ? 'opacity="0"' : ''}/>`;
+  s += `<line class="cross" id="x1" y1="${M.t}" y2="${M.t + ih}" opacity="0"/><circle class="pt index" id="p1i" r="4" opacity="0"/><circle class="pt maint" id="p1m" r="4" opacity="0"/>`;
+  host.insertAdjacentHTML('afterbegin', `<svg viewBox="0 0 ${f.W} ${f.H}" role="img" aria-label="加權指數與融資維持率走勢圖，左軸加權指數，右軸融資維持率">${s}</svg>`);
+  C1 = { host, W: f.W, M, iw, i0, X, YL, YR, svg: $('svg', host), cross: $('#x1', host), dots: [[$('#p1i', host), 'index'], [$('#p1m', host), 'maint']] };
+  legend($('#leg1'), [['index', '加權指數（左軸）', 'var(--s1)'], ['maint', '融資維持率（右軸）', 'var(--s2)']], draw1);
+  $('#note1').textContent = `${D.dates[D.offFrom]} 起為證交所官方全市場整戶值，之前為上市重算`;
+  bindPointer(C1);
+}
+
+/* ---------- 第二張：低於 130% / 140% / 150% 的股票占比 ---------- */
+function draw2() {
+  const host = $('#c2'), f = frame(host, 230), { M, iw, ih } = f;
+  const i0 = startIdx(), n = LAST - i0 + 1, fb = D.firstB;
+  const X = i => M.l + (n === 1 ? iw / 2 : (i - i0) / (LAST - i0) * iw);
+  const [, hi] = extent(D.b150, i0), top = Math.ceil((Number.isFinite(hi) ? hi : 10) * 1.08 / 10) * 10;
+  const Y = v => M.t + ih - v / top * ih;
+  let s = '';
+  if (fb > i0) { const w = X(fb) - M.l; s += `<rect class="warm" x="${M.l}" y="${M.t}" width="${w.toFixed(1)}" height="${ih}"/>`; if (w > 120) s += `<text class="an" x="${M.l + 8}" y="${M.t + 15}">預熱期，尚無估計</text>`; }
+  for (const t of niceTicks(0, top, 5)) s += `<line class="gl" x1="${M.l}" x2="${M.l + iw}" y1="${Y(t).toFixed(1)}" y2="${Y(t).toFixed(1)}"/><text class="tk" x="${M.l - 8}" y="${(Y(t) + 4).toFixed(1)}" text-anchor="end">${fmt(t, 0)}%</text>`;
+  s += axesSvg(f, i0, X);
+  BK.forEach(([k]) => { if (!state.hidden[k]) s += `<path class="ln ${k}" d="${pathOf(D[k], i0, X, Y)}"/>`; });
+  /* 右端直接標註；太近就往下推開 */
+  if (M.r > 30) {
+    const ends = BK.filter(([k]) => !state.hidden[k]).map(([k]) => ({ k, v: D[k][LAST], y: Y(D[k][LAST]) })).sort((a, b) => a.y - b.y);
+    for (let j = 1; j < ends.length; j++) if (ends[j].y - ends[j - 1].y < 13) ends[j].y = ends[j - 1].y + 13;
+    ends.forEach(e => { s += `<circle class="pt ${e.k}" cx="${X(LAST).toFixed(1)}" cy="${Y(e.v).toFixed(1)}" r="3.5" opacity="${OP[e.k]}"/><text class="an" x="${M.l + iw + 8}" y="${(e.y + 4).toFixed(1)}">${fmt(e.v, 1)}%</text>`; });
+  }
+  if (!state.hidden.b130) {   /* 130% 線在視窗內的最高點 */
+    let ip = -1; for (let i = Math.max(i0, fb); i <= LAST; i++) if (D.b130[i] != null && (ip < 0 || D.b130[i] > D.b130[ip])) ip = i;
+    if (ip >= 0) { const x = X(ip), y = Y(D.b130[ip]), left = x > M.l + iw - 190; s += `<circle class="pt b130" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5"/><text class="an" x="${(left ? x - 8 : x + 8).toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="${left ? 'end' : 'start'}">高 ${fmt(D.b130[ip], 1)}%${f.W < 560 ? '' : '（' + D.dates[ip] + '）'}</text>`; }
+  }
+  s += `<line class="cross" id="x2" y1="${M.t}" y2="${M.t + ih}" opacity="0"/>` + BK.map(([k]) => `<circle class="pt ${k}" id="p2${k}" r="4" opacity="0"/>`).join('');
+  host.insertAdjacentHTML('afterbegin', `<svg viewBox="0 0 ${f.W} ${f.H}" role="img" aria-label="低於 130%、140%、150% 的上市一般股票占比走勢圖">${s}</svg>`);
+  C2 = { host, W: f.W, M, iw, i0, X, Y, svg: $('svg', host), cross: $('#x2', host), dots: BK.map(([k]) => [$('#p2' + k, host), k]) };
+  legend($('#leg2'), [['b130', '低於 130%', 'var(--s2)', 1], ['b140', '低於 140%', 'var(--s2)', OP.b140], ['b150', '低於 150%', 'var(--s2)', OP.b150]], draw2);
+  $('#note2').textContent = `占比 = 低於門檻的檔數 ÷ 當天有融資餘額的上市一般股票（4 碼代號，目前 ${fmt(D.n[LAST], 0)} 檔）`;
+  bindPointer(C2);
+}
+
+/* ---------- 兩張圖共用同一個索引，游標線與圓點貫穿 ---------- */
+function tipHTML(chart, i) {
+  const row = (color, op, name, val) => `<div class="row"><span class="swatch" style="background:${color};opacity:${op}"></span>${name}<b>${val}</b></div>`;
+  let h = `<div class="date">${D.dates[i]}</div>`;
+  if (chart === C1) {
+    if (!state.hidden.index) h += row('var(--s1)', 1, '加權指數', fmt(D.taiex[i], 2));
+    if (!state.hidden.maint) h += row('var(--s2)', 1, i >= D.offFrom ? '維持率·官方' : '維持率·重算', fmt(D.m[i], 2) + '%');
+    return h;
+  }
+  if (D.b130[i] == null) return h + '<div class="mode">預熱期，尚無逐檔估計</div>';
+  ['b130', 'b140', 'b150'].forEach(k => { if (!state.hidden[k]) h += row('var(--s2)', OP[k], '低於 ' + k.slice(1) + '%', fmt(D[k][i], 1) + '%'); });
+  return h + `<div class="mode">檔數 ${fmt(D.c130[i], 0)} / ${fmt(D.c140[i], 0)} / ${fmt(D.c150[i], 0)} · 共 ${fmt(D.n[i], 0)} 檔</div>`;
+}
+function showAt(i, active) {
+  [C1, C2].forEach(c => {
+    if (!c) return;
+    const px = c.X(i);
+    c.cross.setAttribute('x1', px); c.cross.setAttribute('x2', px); c.cross.setAttribute('opacity', 1);
+    c.dots.forEach(([el, key]) => {
+      const v = c === C1 ? (key === 'index' ? D.taiex[i] : D.m[i]) : D[key][i];
+      if (v == null || state.hidden[key]) { el.setAttribute('opacity', 0); return; }
+      el.setAttribute('cx', px); el.setAttribute('cy', (c === C1 ? (key === 'index' ? c.YL : c.YR) : c.Y)(v)); el.setAttribute('opacity', c === C2 ? OP[key] : 1);
+    });
+    const tip = c.host.querySelector('.tip');
+    if (c !== active) { tip.classList.remove('on'); return; }
+    tip.innerHTML = tipHTML(c, i); tip.classList.add('on');
+    const scale = c.host.clientWidth / c.W, tw = tip.offsetWidth;
+    tip.style.left = Math.max(tw / 2 + 2, Math.min(c.host.clientWidth - tw / 2 - 2, px * scale)) + 'px'; tip.style.top = '6px';
+  });
+}
+function hideAll() {
+  [C1, C2].forEach(c => { if (!c) return; c.cross.setAttribute('opacity', 0); c.dots.forEach(([el]) => el.setAttribute('opacity', 0)); c.host.querySelector('.tip').classList.remove('on'); });
+}
+function bindPointer(c) {
+  const idxFrom = clientX => {
+    const r = c.svg.getBoundingClientRect(), x = (clientX - r.left) * (c.W / r.width), t = (x - c.M.l) / c.iw;
+    return Math.max(c.i0, Math.min(LAST, c.i0 + Math.round(t * (LAST - c.i0))));
+  };
+  c.svg.addEventListener('pointermove', e => showAt(idxFrom(e.clientX), c));
+  c.svg.addEventListener('pointerdown', e => showAt(idxFrom(e.clientX), c));
+  c.svg.addEventListener('pointerleave', hideAll);
+}
+
+/* ---------- 最新數值、按鈕、表格 ---------- */
+function drawTiles() {
+  const chg = (D.taiex[LAST] / D.taiex[LAST - 1] - 1) * 100, nn = fmt(D.n[LAST], 0);
+  const items = [
+    { k: '加權指數', c: 'var(--s1)', v: fmt(D.taiex[LAST], 0), sub: `${chg >= 0 ? '+' : ''}${fmt(chg, 2)}% 較前一交易日` },
+    { k: '融資維持率', c: 'var(--s2)', v: fmt(D.m[LAST], 2) + '%', sub: LAST >= D.offFrom ? '證交所官方 · 全市場整戶' : '上市重算' },
+    { k: '低於 130%', c: 'var(--s2)', op: 1, v: fmt(D.b130[LAST], 1) + '%', sub: `${fmt(D.c130[LAST], 0)} / ${nn} 檔` },
+    { k: '低於 140%', c: 'var(--s2)', op: OP.b140, v: fmt(D.b140[LAST], 1) + '%', sub: `${fmt(D.c140[LAST], 0)} / ${nn} 檔` },
+    { k: '低於 150%', c: 'var(--s2)', op: OP.b150, v: fmt(D.b150[LAST], 1) + '%', sub: `${fmt(D.c150[LAST], 0)} / ${nn} 檔` },
+  ];
+  $('#tiles').innerHTML = items.map(it => `<div class="tile"><div class="k"><span class="swatch" style="background:${it.c};opacity:${it.op == null ? 1 : it.op}"></span>${it.k}</div><div class="v">${it.v}</div><div class="sub">${it.sub}</div></div>`).join('');
+  $('#stamp').textContent = `資料至 ${D.dates[LAST]} · 估計值，非官方個股數字 · 只含上市`;
+}
+function buttons(host, items, key, onPick) {
+  items.forEach(([val, label]) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'range'; b.textContent = label; b.dataset.v = String(val);
+    b.setAttribute('aria-pressed', String(state[key]) === String(val) ? 'true' : 'false');
+    b.addEventListener('click', () => { state[key] = typeof val === 'number' ? val : val; host.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x.dataset.v === String(val) ? 'true' : 'false')); onPick(); });
+    host.append(b);
+  });
+}
+function drawTable() {
+  /* 兩種名單：low = 維持率低於 130% 的股票裡，估計借款最大的；loan = 不分維持率，估計借款最大的 */
+  const pool = D.stocks.filter(r => r[4] >= state.lots && (state.mode === 'loan' || r[2] < 130));
+  const rows = pool.slice().sort((a, b) => b[3] - a[3]).slice(0, 20);
+  $('#cap1').textContent = (state.mode === 'low' ? '維持率低於 130% 的股票，估計借款最大的 ' : '估計借款最大的 ') + rows.length + ' 檔' + (state.mode === 'low' ? '' : '股票') + '（上市）';
+  $('#tbody').innerHTML = rows.map(r => `<tr><td>${r[0]}</td><td>${r[1].replace(/&/g, '&amp;').replace(/</g, '&lt;')}</td>
+    <td><div class="mc"><span class="mbar" style="width:${(Math.max(2, Math.min(100, r[2] / 130 * 100)) * 0.5).toFixed(0)}px"></span>${fmt(r[2], 1)}</div></td>
+    <td>${fmt(r[3], r[3] < 10 ? 2 : 1)}</td><td>${fmt(r[4], 0)}</td><td>${r[5].toLocaleString('en-US', { maximumFractionDigits: 2 })}</td><td>${fmt(r[6], 1)}</td></tr>`).join('');
+  $('#tnote').textContent = `${D.dates[LAST]} 估計 · 上市一般股票（4 碼代號）共 ${fmt(D.stocks.length, 0)} 檔有融資餘額，符合條件 ${fmt(pool.length, 0)} 檔 · 長條為維持率（滿格 = 130%）` + (state.lots > 0 ? ` · 已排除融資餘額不到 ${fmt(state.lots, 0)} 張的股票` : '');
+}
+function drawRaw() {
+  const rows = [], f = (v, d) => v == null ? '<span class="na">—</span>' : fmt(v, d);
+  for (let i = LAST; i >= 0 && rows.length < 15; i--) rows.push(`<tr><td>${D.dates[i]}</td><td>${fmt(D.taiex[i], 2)}</td><td>${fmt(D.m[i], 2)}</td><td>${f(D.b130[i], 1)}</td><td>${f(D.b140[i], 1)}</td><td>${f(D.b150[i], 1)}</td></tr>`);
+  $('#rawTbl tbody').innerHTML = rows.join('');
+}
+function drawAll() { draw1(); draw2(); }
+
+drawTiles(); drawTable(); drawRaw();
+buttons($('#rangeRow'), RANGES, 'range', () => { hideAll(); drawAll(); });
+buttons($('#sortRow'), [['low', '維持率低於 130% 的股票，估計借款最大的 20 檔'], ['loan', '估計借款 大到小']], 'mode', drawTable);
+buttons($('#lotsRow'), [[0, '不限'], [50, '≥ 50 張'], [100, '≥ 100 張'], [500, '≥ 500 張'], [1000, '≥ 1,000 張']], 'lots', drawTable);
+drawAll();
+let raf = 0, lastW = 0;
+new ResizeObserver(() => { const w = $('.wrap').clientWidth; if (w === lastW) return; lastW = w; cancelAnimationFrame(raf); raf = requestAnimationFrame(drawAll); }).observe($('.wrap'));
+})();
+</script>

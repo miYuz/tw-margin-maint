@@ -1,0 +1,8 @@
+# 抓資料 + 重算 + 做儀表板 (排程環境只需要這三個)。上限只是避免大版本改版讓每日排程默默壞掉；
+# 已用 pandas 1.5.3 / 3.1.0 與 numpy 1.22 / 2.5 各跑過全部測試與一次完整重算，輸出逐位相同。
+pandas>=1.5,<4
+numpy>=1.22,<3
+requests>=2.28,<3
+
+# 只有在本機畫 out/charts/*.png 時才需要 (排程不裝；沒裝時 market_maint.py build 會略過圖、estimator.py 要加 --no-charts)
+# matplotlib>=3.5

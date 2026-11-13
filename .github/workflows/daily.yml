@@ -1,0 +1,77 @@
+name: Daily update
+
+# GitHub 的 cron 是 UTC,台北 = UTC+8。
+#
+# 證交所、櫃買的融資融券與證交所官方維持率都是「當日晚間」才公布(實際時間看各授信機構傳輸狀況,
+# 不固定),所以排在晚上,再加一個隔天清晨的補漏。update.py 會等「上市 raw、上櫃 raw、官方維持率」
+# 三者都有的最後一天才往前走,哪一邊還沒出就停在前一天,下一個時段再補。
+#
+# 為什麼排三個時段:GitHub 的排程是 best-effort,尖峰時會延遲數小時、偶爾整個被丟掉(同樣的做法
+# 與理由見 taifex-vix 的 daily.yml)。這個 workflow 是冪等的(沒有新資料就不 commit),
+# 多跑幾次沒有副作用,只是多幾分鐘 CI 時間。分鐘數刻意避開 :00 / :15 / :30 這種最擁擠的時刻。
+on:
+  schedule:
+    - cron: "37 13 * * 1-5"   # 台北 21:37
+    - cron: "53 15 * * 1-5"   # 台北 23:53
+    - cron: "23 22 * * 1-5"   # 台北 隔天 06:23 — 補漏(週一到週五 UTC = 週二到週六早上台北)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: daily-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment:
+      name: github-pages
+    env:
+      TZ: Asia/Taipei          # fetch_flows.py 用「今天」決定要抓到哪天、哪幾天的空資料先不存
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # 抓缺的日子 -> 重算 -> 重建 docs/index.html。哪一步失敗都會把後面的步驟跑完、最後回傳非 0。
+      - name: 更新資料並重建儀表板
+        run: python update.py
+
+      # 即使上一步有失敗(例如被擋),已經抓到的資料也先存起來,下次接著抓。
+      - name: 有變動才 commit
+        if: ${{ !cancelled() }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data out docs
+          # docs/index.html 沒有建置時間戳,資料沒變就逐位相同,所以直接看有沒有任何變動。
+          if git diff --cached --quiet; then
+            echo "沒有新資料(非交易日,或交易所還沒公布),不產生 commit"
+            exit 0
+          fi
+          LAST=$(tail -n 1 out/breadth_daily_twse_core.csv | cut -d, -f1)
+          git commit -m "資料更新至 ${LAST}
+
+          由 GitHub Actions 自動執行。"
+          git push || { git pull --rebase origin main && git push; }
+
+      # 這一段一定要留在這個 workflow 裡,不能指望 pages.yml 被觸發:
+      # 用 GITHUB_TOKEN 推的 commit 不會觸發其他 workflow(GitHub 為了防止無限迴圈),
+      # 所以上面 push 完 pages.yml 不會跑,網站會停在最後一次「人」推的版本。
+      # 上面任何一步失敗時這幾步不會跑(預設 if: success()),網站維持上一版。
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - uses: actions/deploy-pages@v4

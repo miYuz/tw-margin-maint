@@ -1,0 +1,27 @@
+# 本機工作筆記與執行紀錄
+CONTEXT.md
+logs/
+
+# 其他扣帳設定的敏感度比較、初步結果備份、圖：本機分析用，不進版控
+out/sens/
+out/_prelim_*/
+out/charts/
+# 新聞對照表 (只是參考用，不是產出的資料)
+out/event_counts.csv
+# 儀表板 docs/index.html 是它的複本，只放一份進版控
+out/margin_dashboard.html
+
+# Python
+__pycache__/
+*.py[cod]
+*.tmp
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+
+# OS / 編輯器
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

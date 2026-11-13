@@ -1,0 +1,11 @@
+* text=auto
+
+# 逐日原始檔 (gzip) 是二進位，不要做任何換行轉換
+*.gz binary
+
+# 資料檔、程式、網頁統一 LF，避免 Windows 與排程環境之間每次更新都產生換行差異的假 diff
+*.csv text eol=lf
+*.py text eol=lf
+*.html text eol=lf
+*.yml text eol=lf
+*.md text eol=lf

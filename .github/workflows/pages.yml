@@ -1,0 +1,43 @@
+name: Deploy dashboard to GitHub Pages
+
+# docs/index.html 是自足的單一檔案(資料已內嵌),所以這裡不跑 Python,只把 docs/ 原封不動發布出去。
+# 每日資料更新與發布在 daily.yml 裡一起做;這支只在「人」推了 docs/ 的變動 (例如改版型) 時才會跑。
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同時只跑一個部署;排隊中的舊的直接取消,但不打斷進行中的
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sanity check
+        run: |
+          test -f docs/index.html || { echo "docs/index.html 不存在"; exit 1; }
+          echo "size: $(wc -c < docs/index.html) bytes"
+          grep -qE '^const D = \{' docs/index.html || { echo "index.html 找不到內嵌資料 (const D = {...})"; exit 1; }
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - id: deployment
+        uses: actions/deploy-pages@v4
