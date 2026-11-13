@@ -304,7 +304,7 @@ const N = D.dates.length, LAST = N - 1;
 const $ = (s, r = document) => r.querySelector(s);
 const MONO = 'ui-monospace, Consolas, monospace';
 const fmt = (v, d = 1) => (v == null || Number.isNaN(v)) ? '—' : v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
-const state = { range: '1m', hidden: {}, mode: 'low', lots: 100 };
+const state = { range: '3m', hidden: {}, mode: 'low', lots: 100 };
 const RANGES = [['1m', '1 個月'], ['3m', '3 個月'], ['6m', '6 個月'], ['1y', '1 年'], ['3y', '3 年'], ['all', '全部']];
 const OP = { b130: 1, b140: 0.7, b150: 0.42 };            /* 130% 最深、150% 最淺 */
 const BK = [['b150', '低於 150%'], ['b140', '低於 140%'], ['b130', '低於 130%']];   /* 由淺到深畫，深色在最上層 */
