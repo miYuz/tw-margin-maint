@@ -47,7 +47,7 @@
 
 ## 每日更新
 
-[`.github/workflows/daily.yml`](.github/workflows/daily.yml) 每個交易日排三個時段 (台北約 21:37、23:53 與隔天 06:23)，跑 [`update.py`](update.py)：
+[`.github/workflows/daily.yml`](.github/workflows/daily.yml) 每個交易日排三個時段 (台北 22:07 為主，23:53 備援，隔天 06:23 補漏)，跑 [`update.py`](update.py)：
 
 1. 抓還沒有的交易日 (`fetch_flows.py`，上市與上櫃的逐檔融資 + 價格，已抓的不重抓，休市日存成 `.empty`)
 2. 抓證交所官方維持率並合併存檔 (`market_maint.py refresh --only official`)
